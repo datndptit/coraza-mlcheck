@@ -1,0 +1,72 @@
+// Argus Sentinel sidecar gRPC contract.
+//
+// Server side: the Python sidecar in services/argus-sidecar, loading the
+// Argus Sentinel v4 artifacts (model.onnx + tokenizer.json + config.json +
+// the preprocessing/inference modules) and listening on a Unix Domain Socket.
+// Client side: the Coraza "mlcheck" action in this module.
+//
+// v4 semantics (wire-compatible with the pre-v4 bundle; field numbers and
+// types are unchanged):
+//
+//   - risk_score carries the v4 binary head output: attack_prob, already
+//     sigmoid-ed, range [0,1]. It is NOT the old aggregate multi-label risk
+//     score, and it is returned for every request, also below threshold.
+//   - detections carries at most one entry: {"attack": attack_prob} when the
+//     sidecar's own threshold was crossed, otherwise it is empty. There are
+//     no xss/sqli/... labels in v4.
+//   - is_clean is the sidecar's own verdict under its configured threshold
+//     (is_attack == attack_prob > threshold, strictly greater). The mlcheck
+//     action may recompute the verdict from TX:argus_threshold; these fields
+//     always carry the sidecar's own result.
+//   - session_* fields are retained for wire compatibility and are ignored
+//     by the v4 model.
+//   - headers carries ONLY the headers the v4 preprocessing consumes
+//     (user-agent, referer, cookie), with lower-cased names; duplicate
+//     values of one header are joined with "; " in the order Coraza saw
+//     them. Authorization and other headers are deliberately not sent.
+//   - body carries a raw prefix (the client caps it at 4 KiB) of the request
+//     body read from Coraza's body buffer. It is independent of any body
+//     processor: JSON/XML variables are not used, the raw bytes are.
+//   - uri carries REQUEST_URI_RAW (request line as sent, absolute-form kept;
+//     the v4 preprocessing strips scheme://host and normalizes).
+syntax = "proto3";
+
+package argus.v1;
+
+option go_package = "github.com/datndptit/coraza-mlcheck/proto/argusv1;argusv1";
+
+service ArgusSentinel {
+  // Classify a single HTTP request. Implementations MUST respond within the
+  // deadline supplied by the client (defaults to ~50ms).
+  rpc Classify(ClassifyRequest) returns (ClassifyResponse);
+}
+
+message ClassifyRequest {
+  // REQUEST_METHOD, e.g. "GET", "POST".
+  string method = 1;
+  // REQUEST_URI_RAW: the request line as sent by the client, absolute-form
+  // kept (e.g. "http://host/a?b=1"). The sidecar strips scheme://host.
+  string uri = 2;
+  // Only user-agent, referer and cookie; lower-cased names; duplicate header
+  // values joined with "; " in header order.
+  map<string, string> headers = 3;
+  // Raw request body prefix, capped by the client at 4 KiB before sending.
+  bytes body = 4;
+
+  // Retained for wire compatibility with the pre-v4 contract; the v4 model
+  // does not consume session features (all requests are standalone).
+  int32  session_request_count = 5;
+  double session_duration      = 6;
+  double session_pattern_score = 7;
+}
+
+message ClassifyResponse {
+  // Sidecar verdict: true iff attack_prob did NOT cross the sidecar's
+  // configured threshold (thresholds in config.json, strictly greater).
+  bool is_clean = 1;
+  // attack_prob: v4 binary head output (sigmoid), range [0, 1]. Always set.
+  double risk_score = 2;
+  // {"attack": attack_prob} when the sidecar threshold was crossed, else
+  // empty.
+  map<string, double> detections = 3;
+}

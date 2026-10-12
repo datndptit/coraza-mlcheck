@@ -1,0 +1,17 @@
+# Local-plugin codegen used by `make proto`: buf compiles the proto itself, so
+# no protoc binary is needed; protoc-gen-go and protoc-gen-go-grpc must be on
+# PATH (see Makefile for the go install commands). Keep the plugin versions in
+# sync with go.mod and docker/caddy/Dockerfile.
+version: v2
+plugins:
+  - local: protoc-gen-go
+    out: proto
+    opt:
+      - paths=source_relative
+  - local: protoc-gen-go-grpc
+    out: proto
+    opt:
+      - paths=source_relative
+      - require_unimplemented_servers=false
+inputs:
+  - directory: proto

@@ -1,0 +1,32 @@
+{
+  "admin": { "disabled": true },
+  "logging": {
+    "logs": {
+      "default": { "level": "INFO" }
+    }
+  },
+  "apps": {
+    "http": {
+      "servers": {
+        "e2e": {
+          "listen": [":8080"],
+          "routes": [
+            {
+              "handle": [
+                {
+                  "handler": "waf",
+                  "directives": "SecRequestBodyAccess On\nSecRuleEngine On\nSecRequestBodyLimit 1048576\nSecAuditEngine RelevantOnly\nSecAuditLog /logs/waf-audit.log\nSecAuditLogFormat JSON\nSecAuditLogParts ABFHZ\nSecAction \"id:1899999100,phase:2,pass,nolog,noauditlog,mlcheck\"\nSecRule TX:argus_is_clean \"@streq 0\" \"id:1899999101,phase:2,deny,status:403,log,auditlog,msg:'Argus v4 blocked',tag:'argus-sentinel/v4',logdata:'attack_prob=%{tx.argus_risk_score}'\"\nSecRule TX:argus_error \"@rx .+\" \"id:1899999102,phase:2,pass,log,auditlog,msg:'Argus v4 unavailable',tag:'argus-sentinel/error',logdata:'reason=%{tx.argus_error}'\""
+                },
+                {
+                  "handler": "static_response",
+                  "status_code": 200,
+                  "body": "OK\n"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  }
+}

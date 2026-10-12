@@ -1,0 +1,4 @@
+# Generated Go proto stubs are committed so remote module builds need no codegen.
+/dist/
+*.test
+*.out
