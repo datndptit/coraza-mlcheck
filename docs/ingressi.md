@@ -43,21 +43,27 @@ Prepare the trusted v4 bundle with
 It copies `model.onnx`, `tokenizer.json`, `config.json`, `preprocess.py`,
 `inference_cpu.py` and writes `MANIFEST.sha256`. The public image has no model.
 Set permissions so the runtime UID/GID can read all files and traverse the
-model directory; defaults are 10000:10000.
+model directory; defaults are 10000:10000. The sidecar stack mounts this
+directory read-only; the Ingressi stack never mounts the model.
 
 Add to the existing Ingressi `.env` (keep its existing required credentials):
 
 ```dotenv
 COMPOSE_FILE=docker-compose.yml:docker-compose.argus.yml
-ARGUS_MODEL_DIR_HOST=/opt/argus/models/sentinel-v4
-ARGUS_THRESHOLD=fpr0.1%
+ARGUS_SOCKET_VOLUME=ingressi-argus-run
 ARGUS_TIMEOUT_MS=50
 ```
 
 `COMPOSE_FILE` uses `:` on Ubuntu. Retain any additional overlays your
-installation already needs. A project-scoped `argus-run` volume is shared
-by Caddy and the sidecar; there are no sidecar host ports. Both containers
-must have matching UID/GID. One socket volume per Caddy/sidecar pair.
+installation already needs. The overlay deliberately contains no sidecar
+service: deploy the sidecar from its own repository stack
+([argus-sidecar](https://github.com/datndptit/argus-sidecar)) and start it
+first so a fresh volume is created with the right ownership. The overlay
+mounts the socket volume as an **external** volume named by
+`ARGUS_SOCKET_VOLUME` (default `ingressi-argus-run`); the Ingressi project
+never creates or removes it. There are no sidecar host ports. Both
+containers must have matching UID/GID. One socket volume per Caddy/sidecar
+pair.
 
 The overlay sets `COMPOSE_EXTRA_FILE=/compose/docker-compose.argus.yml`
 on **l4-port-manager**. This is necessary: that service explicitly passes
@@ -72,29 +78,27 @@ From the patched Ingressi checkout:
 
 ```sh
 docker compose config --quiet
-docker compose pull argus-sidecar
 docker compose build caddy
-docker compose up -d --no-deps --no-build --pull never argus-sidecar
-# Wait for model initialization; repeat until successful:
-docker compose exec argus-sidecar python -m argus_sidecar.healthcheck
 docker compose up -d --no-deps --no-build --pull never caddy l4-port-manager
 
 docker compose exec caddy caddy build-info | grep github.com/datndptit/coraza-mlcheck
 docker compose exec caddy caddy list-modules | grep dns.providers.bunny
 ```
 
-This updates services of an existing, configured Ingressi installation.
-For a fresh installation, follow the upstream setup for the rest of the
-stack too. All later Compose operations must retain the ML overlay.
-Do not pull the base upstream Caddy image over the custom build.
+Start the sidecar stack (its own repository README) before recreating
+Caddy: the socket volume is external, so Compose fails on a missing volume
+instead of silently starting an ML-less Caddy. This updates services of an
+existing, configured Ingressi installation. For a fresh installation,
+follow the upstream setup for the rest of the stack too. All later Compose
+operations must retain the ML overlay. Do not pull the base upstream Caddy
+image over the custom build.
 
-The prebuilt sidecar uses UID/GID 10000. If PUID/PGID differ, set
-`ARGUS_SIDECAR_IMAGE=argus-sidecar:local` in `.env`, skip its pull, and run
-`docker compose build argus-sidecar` before starting it. The overlay builds
-from the public Git tag and passes matching PUID/PGID; no local source clone
-is needed. Adjust model and existing socket-volume permissions accordingly.
-The host is Ubuntu 24.04; the Caddy container's base remains upstream's
-Ubuntu 26.04, and the sidecar uses Debian bookworm/Python 3.12.
+The prebuilt sidecar uses UID/GID 10000. If PUID/PGID differ, rebuild the
+sidecar in its own repository with matching `--build-arg PUID=... PGID=...`
+(see its README) and adjust model and socket-volume permissions
+accordingly; set `PUID`/`PGID` for the Caddy service as usual. The host is
+Ubuntu 24.04; the Caddy container's base remains upstream's Ubuntu 26.04,
+and the sidecar uses Debian bookworm/Python 3.12.
 
 ## Rules and current WAF behavior
 
