@@ -46,13 +46,25 @@ Set permissions so the runtime UID/GID can read all files and traverse the
 model directory; defaults are 10000:10000. The sidecar stack mounts this
 directory read-only; the Ingressi stack never mounts the model.
 
+Use sidecar **v0.1.1 or newer** for configurable socket/runtime settings.
+Copy its `.env.example` to `.env` on first installation, then persist the
+host model path and both socket values there. Preserve existing `.env`
+files during upgrades. Shell `export` values alone do not survive a new
+SSH session. The v0.1.0 Compose file does not forward a custom ARGUS_SOCKET.
+
 Add to the existing Ingressi `.env` (keep its existing required credentials):
 
 ```dotenv
 COMPOSE_FILE=docker-compose.yml:docker-compose.argus.yml
 ARGUS_SOCKET_VOLUME=ingressi-argus-run
+ARGUS_SOCKET=/run/argus/argus.sock
 ARGUS_TIMEOUT_MS=50
 ```
+
+Match `ARGUS_SOCKET_VOLUME` and `ARGUS_SOCKET` in both stacks. Custom socket
+paths must stay inside `/run/argus`; recreate both services when changing
+the socket path. Inference settings (ORT threads, deadline shedding,
+threshold, workers and logging) belong in the sidecar's `.env`.
 
 `COMPOSE_FILE` uses `:` on Ubuntu. Retain any additional overlays your
 installation already needs. The overlay deliberately contains no sidecar
