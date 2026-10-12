@@ -1,0 +1,40 @@
+{
+  "admin": {
+    "disabled": true
+  },
+  "apps": {
+    "http": {
+      "servers": {
+        "test": {
+          "listen": [
+            ":8080"
+          ],
+          "routes": [
+            {
+              "match": [
+                {
+                  "path": [
+                    "/detect/*"
+                  ]
+                }
+              ],
+              "handle": [
+                {
+                  "handler": "waf",
+                  "directives": "Include @coraza.conf-recommended\nInclude @crs-setup.conf.example\nSecRule REQBODY_PROCESSOR \"!@rx (?:URLENCODED|MULTIPART|XML|JSON)\" \"id:1899999000,phase:1,pass,t:none,nolog,noauditlog,ctl:requestBodyProcessor=RAW\"\nInclude @owasp_crs/*.conf\nSecRuleUpdateActionById 949110 \"pass\"\nSecRuleUpdateActionById 949111 \"pass\"\nSecRuleUpdateActionById 959100 \"pass\"\nSecRuleUpdateActionById 959101 \"pass\"\nSecRuleEngine On\nSecAuditEngine RelevantOnly\nSecAuditLog /logs/waf-audit.log\nSecAuditLogFormat JSON\nSecAuditLogParts ABFHZ\nSecResponseBodyAccess Off\nSecRequestBodyLimit 1048576\nSecRequestBodyInMemoryLimit 1024\n# Argus Sentinel v4 \u2014 DETECT ONLY (sidecar default threshold)\n#\n# Paste each rule as a SINGLE line into the WAF custom directives box (global\n# settings or a proxy host). The Ingressi builder drops continuation\n# backslashes, Include and SecRequestBodyAccess, so nothing here may wrap.\n#\n#   * rule 1899999100 runs the ML check in phase 2 (CRS must be enabled: it\n#     provides body access and the processors);\n#   * rule 1899999101 records detections; CRS keeps blocking on its own \u2014\n#     switch to \"deny,status:403\" (see block.conf) once live scores have been\n#     reviewed;\n#   * rule 1899999102 records sidecar failures (fail-open is automatic).\n#\n# About the audit log: with the CRS loaded, @coraza.conf-recommended sets\n# SecAuditLogRelevantStatus to 4xx/5xx only, so a detect hit on a request\n# that keeps flowing (status 200) would NOT reach the audit log even though\n# the rule carries \"auditlog\". `ctl:auditEngine=On` (accepted by the Ingressi\n# filter; it only forces logging, never disables protection) makes the\n# flagged transaction auditable \u2014 this is what puts ML detections into\n# Security events. Verified against the built image.\n#\n# The error rule intentionally has NO ctl:auditEngine=On: a dead sidecar\n# would otherwise emit one audit event per request. Its signal lives in the\n# Caddy logs and in the mlcheck metrics summary; add ctl:auditEngine=On to it\n# only if you deliberately accept that flood risk.\n#\n# Rollout order: plugin binary + sidecar FIRST (docker compose pull/build +\n# up -d), then these rules. A node without the plugin refuses the whole\n# config when it sees \"mlcheck\".\n#\n# Recommended id range: 1899999100-1899999199 (above the RAW body rule\n# 1899999000, below the exclusion records' 1900000000). Do not reuse ids\n# already taken by other custom rules.\n\nSecAction \"id:1899999100,phase:2,pass,nolog,noauditlog,mlcheck\"\nSecRule TX:argus_is_clean \"@streq 0\" \"id:1899999101,phase:2,pass,log,auditlog,ctl:auditEngine=On,severity:WARNING,msg:'Argus v4 detected',tag:'argus-sentinel/v4',logdata:'attack_prob=%{tx.argus_risk_score}'\"\nSecRule TX:argus_error \"@rx .+\" \"id:1899999102,phase:2,pass,log,auditlog,severity:WARNING,msg:'Argus v4 unavailable',tag:'argus-sentinel/error',logdata:'reason=%{tx.argus_error}'\"",
+                  "load_owasp_crs": true
+                },
+                {
+                  "handler": "static_response",
+                  "status_code": 200,
+                  "body": "OK"
+                }
+              ],
+              "terminal": true
+            }
+          ]
+        }
+      }
+    }
+  }
+}

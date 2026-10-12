@@ -25,23 +25,32 @@ single `attack_prob` (mapped to `risk_score`) and at most the `attack`
 detection label. See `proto/argusv1/argus.proto` for the exact v4 semantics of
 each field.
 
-## Build
+## Build for current Ingressi
 
-Use the published Go module, with an explicit release:
+Ingressi owns the Caddy build. Its Dockerfile runs
+`update-compatibility-pins.sh` and `build.sh`; the latter reads Caddy and
+plugin versions from `docker/caddy/go.mod` before invoking xcaddy. Do not
+replace that pipeline with a standalone command or copy an older Caddy
+module list: that would omit current providers and compatibility handling.
+
+Register `github.com/datndptit/coraza-mlcheck v0.1.0` in that manifest,
+blank-import it in `tools.go`, and list its unversioned module path in
+`build.sh`. Then build **Ingressi's Dockerfile**:
 
 ```sh
-xcaddy build v2.11.7 \
-  --with github.com/corazawaf/coraza-caddy/v2@v2.6.1 \
-  --with github.com/datndptit/coraza-mlcheck@v0.1.0
+docker build -f docker/caddy/Dockerfile -t ingressi-caddy-argus:local .
 ```
 
-For Ingressi, add this module to `docker/caddy/go.mod`, its blank import to
-`tools.go`, and its name to `build.sh`'s pinned module list. Keep all existing
-Ingressi modules. No local source `replace`, extra Docker build context or
-protoc installation is needed: generated Go stubs ship in this repository.
-The release requires Coraza v3.8.1. Linux containers run on Ubuntu 24.04;
-Caddy and the sidecar should use the same UID/GID (default 10000:10000) and
-socket volume. Build Caddy before enabling rules containing `mlcheck`.
+See the [current Ingressi deployment guide](docs/ingressi.md) for the reviewed
+patch, Compose overlay, L4 port-manager handling and validation. Generated
+Go stubs are committed: no local module replacement or protoc is required.
+
+Validated against Ingressi `b0802aa8d442048092d8d901bcb8d87d1d742aaf`:
+Caddy v2.11.7, coraza-caddy v2.6.1, Coraza v3.8.1, CRS v4.25.0. These are
+observed versions in that checkout, not a replacement set of build pins.
+Future upstream changes need a new compatibility run. The action uses
+Coraza's experimental plugin API; a successful standalone Go test alone
+is not enough to establish compatibility with a new Ingressi binary.
 
 ### Local development
 

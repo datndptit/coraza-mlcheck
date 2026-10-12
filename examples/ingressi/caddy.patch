@@ -1,0 +1,71 @@
+diff --git a/docker/caddy/Dockerfile b/docker/caddy/Dockerfile
+index 386a1deb..ab595141 100644
+--- a/docker/caddy/Dockerfile
++++ b/docker/caddy/Dockerfile
+@@ -42,12 +42,15 @@ RUN (getent group ${PGID} && groupdel $(getent group ${PGID} | cut -d: -f1) || t
+     (getent passwd ${PUID} && userdel $(getent passwd ${PUID} | cut -d: -f1) || true) && \
+     groupadd -g ${PGID} caddy && \
+     useradd -r -u ${PUID} -g caddy -m -d /home/caddy caddy && \
+-    mkdir -p /data /config /logs /acme-ca && \
+-    chown -R caddy:caddy /data /config /logs /home/caddy && \
++    mkdir -p /data /config /logs /acme-ca /run/argus && \
++    chown -R caddy:caddy /data /config /logs /home/caddy /run/argus && \
+     chmod 0777 /acme-ca
+ 
+ COPY --chown=caddy:caddy docker/caddy/Caddyfile /etc/caddy/Caddyfile
+ 
++# Initialize the shared Argus socket volume with the same UID/GID as Caddy.
++RUN touch /run/argus/.keep && chown caddy:caddy /run/argus/.keep
++
+ EXPOSE 80 443 2019
+ 
+ # Set environment variables to use /data and /config like official Caddy image
+diff --git a/docker/caddy/build.sh b/docker/caddy/build.sh
+index 6fd8706a..0a11f8e6 100644
+--- a/docker/caddy/build.sh
++++ b/docker/caddy/build.sh
+@@ -44,6 +44,7 @@ github.com/mholt/caddy-l4
+ github.com/mholt/caddy-ratelimit
+ github.com/fuomag9/caddy-blocker-plugin
+ github.com/corazawaf/coraza-caddy/v2
++github.com/datndptit/coraza-mlcheck
+ github.com/pberkel/caddy-storage-redis
+ MODULES
+ 
+diff --git a/docker/caddy/go.mod b/docker/caddy/go.mod
+index d8cf7b2c..ff2023b4 100644
+--- a/docker/caddy/go.mod
++++ b/docker/caddy/go.mod
+@@ -28,6 +28,7 @@ require (
+ 	github.com/caddy-dns/vultr v0.0.0-20250723121531-55bf3e9768be
+ 	github.com/caddyserver/caddy/v2 v2.11.7
+ 	github.com/corazawaf/coraza-caddy/v2 v2.6.1
++	github.com/datndptit/coraza-mlcheck v0.1.0
+ 	github.com/fuomag9/caddy-blocker-plugin v0.0.0-20260728192246-a1ff7050deb7
+ 	github.com/mholt/caddy-l4 v0.1.2
+ 	github.com/mholt/caddy-ratelimit v0.1.1-0.20260612195517-5625512f24f6
+diff --git a/docker/caddy/go.sum b/docker/caddy/go.sum
+index a1e651c5..e8fd6cab 100644
+--- a/docker/caddy/go.sum
++++ b/docker/caddy/go.sum
+@@ -193,6 +193,8 @@ github.com/cpuguy83/go-md2man v1.0.10/go.mod h1:SmD6nW6nTyfqj6ABTjUi3V3JVMnlJmwc
+ github.com/cpuguy83/go-md2man/v2 v2.0.6/go.mod h1:oOW0eioCTA6cOiMLiUPZOpcVxMig6NIQQ7OS05n1F4g=
+ github.com/cpuguy83/go-md2man/v2 v2.0.7 h1:zbFlGlXEAKlwXpmvle3d8Oe3YnkKIK4xSRTd3sHPnBo=
+ github.com/cpuguy83/go-md2man/v2 v2.0.7/go.mod h1:oOW0eioCTA6cOiMLiUPZOpcVxMig6NIQQ7OS05n1F4g=
++github.com/datndptit/coraza-mlcheck v0.1.0 h1:H/DmlBm/jrf7tLw3Mtgy0EY0VYx2SaLx/57TEgnmVKs=
++github.com/datndptit/coraza-mlcheck v0.1.0/go.mod h1:yBDQiENCc9QALsRXrXY21DvYJDX3Cg1GlNatXPxhAdo=
+ github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
+ github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
+ github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1VwoXQT9A3Wy9MM3WgvqSxFWenqJduM=
+diff --git a/docker/caddy/tools.go b/docker/caddy/tools.go
+index 10cbb550..c2b4da50 100644
+--- a/docker/caddy/tools.go
++++ b/docker/caddy/tools.go
+@@ -39,6 +39,7 @@ import (
+ 	_ "github.com/caddy-dns/vultr"
+ 	_ "github.com/caddyserver/caddy/v2"
+ 	_ "github.com/corazawaf/coraza-caddy/v2"
++	_ "github.com/datndptit/coraza-mlcheck"
+ 	_ "github.com/fuomag9/caddy-blocker-plugin"
+ 	_ "github.com/mholt/caddy-l4"
+ 	_ "github.com/mholt/caddy-ratelimit"

@@ -1,0 +1,34 @@
+name: Ingressi compatibility
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  ingressi:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: mlcheck
+      - uses: actions/checkout@v4
+        with:
+          repository: ingres-si/ingressi
+          ref: b0802aa8d442048092d8d901bcb8d87d1d742aaf
+          path: ingressi
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.x'
+          cache-dependency-path: ingressi/docker/caddy/go.sum
+      - name: Apply the reviewed integration to current Ingressi
+        working-directory: ingressi
+        run: git apply ../mlcheck/examples/ingressi/caddy.patch
+      - name: Test the released action with Ingressi's dependency graph
+        working-directory: ingressi/docker/caddy
+        run: go test -mod=readonly -race github.com/datndptit/coraza-mlcheck/...
+      - name: Build through Ingressi's Dockerfile and manifest
+        working-directory: ingressi
+        run: docker build -f docker/caddy/Dockerfile -t ingressi-argus:compat .
+      - name: Validate generated Ingressi WAF config with embedded CRS
+        run: |
+          docker run --rm --mount "type=bind,source=$PWD/mlcheck/examples/ingressi/validate.json,target=/tmp/validate.json,readonly" ingressi-argus:compat caddy validate --config /tmp/validate.json
+          docker run --rm ingressi-argus:compat caddy build-info | grep 'github.com/datndptit/coraza-mlcheck'
+          docker run --rm ingressi-argus:compat caddy list-modules | grep 'dns.providers.bunny'

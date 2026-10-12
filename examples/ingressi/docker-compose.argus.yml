@@ -1,0 +1,54 @@
+# Add to the current Ingressi stack. No local plugin/sidecar source required.
+services:
+  caddy:
+    image: ingressi-caddy-argus:local
+    environment:
+      ARGUS_SOCKET: ${ARGUS_SOCKET:-/run/argus/argus.sock}
+      ARGUS_TIMEOUT_MS: ${ARGUS_TIMEOUT_MS:-50}
+      ARGUS_MAX_INFLIGHT: ${ARGUS_MAX_INFLIGHT:-64}
+      ARGUS_QUEUE_WAIT_MS: ${ARGUS_QUEUE_WAIT_MS:-5}
+      ARGUS_CIRCUIT_FAILS: ${ARGUS_CIRCUIT_FAILS:-10}
+      ARGUS_CIRCUIT_COOLDOWN_MS: ${ARGUS_CIRCUIT_COOLDOWN_MS:-5000}
+      ARGUS_METRICS_INTERVAL_S: ${ARGUS_METRICS_INTERVAL_S:-60}
+    volumes:
+      - argus-run:/run/argus
+  argus-sidecar:
+    image: ${ARGUS_SIDECAR_IMAGE:-ghcr.io/datndptit/argus-sidecar:v0.1.0}
+    build:
+      context: https://github.com/datndptit/argus-sidecar.git#v0.1.0
+      dockerfile: Dockerfile
+      args:
+        PUID: ${PUID:-10000}
+        PGID: ${PGID:-10000}
+    restart: unless-stopped
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    tmpfs: ["/tmp:size=16m,mode=1777"]
+    cpus: ${ARGUS_CPU_LIMIT:-2.0}
+    mem_limit: ${ARGUS_MEM_LIMIT:-512M}
+    pids_limit: 128
+    environment:
+      ARGUS_MODEL_DIR: /model
+      ARGUS_SOCKET: ${ARGUS_SOCKET:-/run/argus/argus.sock}
+      ARGUS_SOCKET_MODE: "0o660"
+      ARGUS_VERIFY_MANIFEST: "1"
+      ARGUS_THRESHOLD: ${ARGUS_THRESHOLD:-fpr0.1%}
+      ARGUS_WORKERS: ${ARGUS_WORKERS:-4}
+      ARGUS_MAX_CONCURRENT_RPCS: ${ARGUS_MAX_CONCURRENT_RPCS:-8}
+      ARGUS_MIN_REMAINING_MS: ${ARGUS_MIN_REMAINING_MS:-5}
+      ORT_INTRA_THREADS: ${ORT_INTRA_THREADS:-1}
+      LOG_LEVEL: ${ARGUS_LOG_LEVEL:-INFO}
+    volumes:
+      - ${ARGUS_MODEL_DIR_HOST:?Set ARGUS_MODEL_DIR_HOST to the prepared v4 bundle}:/model:ro
+      - argus-run:/run/argus
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+  # The port manager passes -f explicitly and therefore ignores COMPOSE_FILE.
+  # Keep this overlay when it recreates Caddy after an L4 port change.
+  l4-port-manager:
+    environment:
+      COMPOSE_EXTRA_FILE: /compose/docker-compose.argus.yml
+volumes:
+  argus-run: {}
